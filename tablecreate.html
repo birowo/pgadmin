@@ -1,0 +1,203 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create PostgreSQL Table</title>
+<style>
+input,select,button{padding:4px}
+input[type=text]{box-sizing:border-box}
+table{margin-top:12px}
+th,td{border: none;padding:2px}
+.actions{margin-top:8px}
+button{cursor:pointer}
+.remove-field{color:#c00;font-size:18pt;padding: 0px 8px}
+</style>
+</head>
+<body>
+<h3>Create PostgreSQL Table</h3>
+
+<div>
+Table name<br>
+<input id="tableName" type="text" placeholder="table name">
+</div>
+
+<table>
+<thead><tr>
+<th style="min-width:90px"></th>
+<th>Field name</th>
+<th>Type</th>
+<th>Size</th>
+<th style="min-width:60px">not null</th>
+<th>Key</th>
+<th>Default</th>
+<th></th>
+</tr></thead>
+<tbody id="fields"></tbody>
+</table>
+
+<div class="actions">
+<button type="button" id="addField">Add field</button>
+
+</div>
+
+<div class="actions">
+  <textarea id="sqlOutput" rows="9"
+    style="width:100%;box-sizing:border-box"
+    placeholder="CREATE TABLE query..."></textarea>
+  <button type="button" id="convertSQL">Convert to SQL</button>
+  <button type="button" id="copySQL">Copy SQL</button>
+</div>
+
+<script>
+console.log("test")
+const types = [
+'INT8','INT4','INT2','VARCHAR','TEXT','BOOLEAN','FLOAT4','FLOAT8','DATE','TIMESTAMP','TIMESTAMPTZ','UUID','JSONB','BYTEA'
+];
+
+//const options = types.map(t => `<option>${t}</option>`).join('');
+const keys = ['', 'PRIMARY','UNIQUE-1','UNIQUE-2','UNIQUE-3','UNIQUE-4','UNIQUE-5','UNIQUE-6','UNIQUE-7'];
+const opt = ['NULL', 'NOT NULL']
+const select = itms => itms.map(i => `<option value="${i}">${i}</option>`).join()
+addField.onclick = () =>
+fields.insertAdjacentHTML('beforeend', `<tr>
+<td><button onclick="up(this)">&#9650; up</button> <button onclick="down(this)">&#9660; dn</button></td>
+<td><input type="text" placeholder="field name"></td>
+<td><select aria-label="Type">${select(types)}</select></td>
+<td><input type="number" style="width:70px" placeholder="—"></td>
+<td style="text-align:center"><input type="checkbox"></td>
+<td><select>${select(keys)}</select></td>
+<td><input type="text" placeholder="-"></td>
+<td class="remove-field">X</td>
+</tr>`);
+
+fields.onclick = e => {
+if (e.target.closest('.remove-field')) e.target.closest('tr').remove();
+};
+
+convertSQL.onclick = () => {
+  const table = tableName.value.trim();
+  if (!table) {
+    alert('Table name wajib diisi');
+    return;
+  }
+
+  const ident = name => {
+    if (!name || name.includes('\0')) {
+      throw new Error('Nama identifier tidak valid');
+    }
+    return '"' + name.replace(/"/g, '""') + '"';
+  };
+
+  const rows = [...fields.querySelectorAll('tr')];
+  const columns = [];
+  const uniqueGroups = new Map();
+  const primaryFields = [];
+
+  try {
+    for (const row of rows) {
+const inputs = row.querySelectorAll('input');
+const selects = row.querySelectorAll('select');
+
+const name = inputs[0].value.trim();
+const type = selects[0].value;
+const size = inputs[1].value.trim();
+const notNull = inputs[2].checked;
+const defaultValue = inputs[3].value.trim();
+const key = selects[1].value;
+
+      if (!name) continue;
+
+      let sqlType = type;
+
+      if (type === 'VARCHAR' && size) {
+        const n = Number(size);
+        if (!Number.isInteger(n) || n < 1 || n > 10485760) {
+          throw new Error(`Size VARCHAR tidak valid: ${name}`);
+        }
+        sqlType = `VARCHAR(${n})`;
+      } else if (size) {
+        throw new Error(`Size hanya didukung untuk VARCHAR: ${name}`);
+      }
+
+      let column = `${ident(name)} ${sqlType}`;
+
+      if (notNull) {
+        column += ' NOT NULL';
+      }
+
+      // Default dianggap SQL expression, bukan string literal.
+      if (defaultValue) {
+        column += ` DEFAULT ${defaultValue}`;
+      }
+
+      columns.push(column);
+
+      if (key === 'PRIMARY') {
+        primaryFields.push(name);
+      } else if (key.startsWith('UNIQUE-')) {
+        const group = key.slice('UNIQUE-'.length);
+        if (!uniqueGroups.has(group)) {
+          uniqueGroups.set(group, []);
+        }
+        uniqueGroups.get(group).push(name);
+      }
+    }
+
+    if (columns.length === 0) {
+      throw new Error('Tambahkan minimal satu field');
+    }
+
+  if (primaryFields.length > 0) {
+    columns.push(
+      `PRIMARY KEY (${primaryFields.map(ident).join(', ')})`
+    );
+  }
+
+    for (const [group, names] of uniqueGroups) {
+      columns.push(
+        `CONSTRAINT ${ident('uq_' + table + '_' + group)} UNIQUE (` +
+        names.map(ident).join(', ') + ')'
+      );
+    }
+
+    sqlOutput.value =
+      `CREATE TABLE ${ident(table)} (\n  ` +
+      columns.join(',\n  ') +
+      '\n);';
+  } catch (error) {
+    alert(error.message);
+  }
+};
+
+copySQL.onclick = async () => {
+  if (!sqlOutput.value) return;
+  try {
+    await navigator.clipboard.writeText(sqlOutput.value);
+  } catch {
+    sqlOutput.select();
+    document.execCommand('copy');
+  }
+};
+function up(btn) {
+    const row = btn.closest('tr');
+    const prv = row.previousElementSibling;
+    
+    if (prv) {
+        row.parentNode.insertBefore(row, prv);
+    }
+}
+
+function down(btn) {
+    const row = btn.closest('tr');
+    const nxt = row.nextElementSibling;
+    
+    if (nxt) {
+        // Pindahkan ke sebelum elemen setelah barisBawah
+        row.parentNode.insertBefore(row, nxt.nextElementSibling);
+    }
+}
+addField.click()
+</script>
+</body>
+</html>
